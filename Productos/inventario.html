@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Gestión de Productos</title>
+  <link rel="shortcut icon" href="../logo.png" type="image/x-icon">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Fuente-->
+  <link href="https://fonts.googleapis.com/css2?family=Roboto&display=swap" rel="stylesheet">
+
+  <style>
+    body {
+      font-family: 'Roboto', sans-serif;
+      background-color: #f1f4f9;
+      margin: 0;
+      padding: 20px;
+      color: #333;
+    }
+
+    h1 {
+      text-align: center;
+      color: #2c3e50;
+      margin-bottom: 40px;
+    }
+
+    .container {
+      max-width: 1000px;
+      margin: auto;
+    }
+
+    .card {
+      background: #ffffff;
+      padding: 20px;
+      border-radius: 12px;
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.06);
+      margin-bottom: 30px;
+    }
+
+    .form input[type="text"],
+    .form input[type="number"] {
+      display: block;
+      width: 100%;
+      max-width: 400px;
+      padding: 10px;
+      margin: 10px 0;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      font-size: 15px;
+    }
+
+    .btn {
+      background-color: #3498db;
+      color: white;
+      border: none;
+      padding: 10px 18px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-size: 15px;
+      margin-top: 10px;
+      transition: background-color 0.3s ease;
+    }
+
+    .btn:hover {
+      background-color: #2980b9;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 15px;
+    }
+
+    table thead {
+      background-color: #ecf0f1;
+    }
+
+    th,
+    td {
+      text-align: left;
+      padding: 10px;
+      border-bottom: 1px solid #ddd;
+      font-size: 14px;
+    }
+
+    th {
+      color: #2c3e50;
+    }
+
+    .dashboard p {
+      margin: 8px 0;
+      font-size: 16px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <div class="container">
+    <h1>Inventario de Productos 3D</h1>
+
+    <div class="card">
+      <form id="product-form" class="form">
+        <input type="text" id="nombre" placeholder="Nombre del producto" required />
+        <input type="number" id="precio" placeholder="Precio de venta ($)" step="0.01" required />
+        <input type="number" id="costo" placeholder="Costo ($)" step="0.01" required />
+        <input type="hidden" id="producto-id" />
+        <button type="submit" class="btn">Guardar producto</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <table class="table table-striped" id="product-table">
+        <thead>
+          <tr>
+            <th>Nombre</th>
+            <th>Precio Venta</th>
+            <th>Costo</th>
+            <th>Ganancia</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    let db;
+    const request = indexedDB.open("productosDB", 1);
+
+    request.onerror = () => console.error("Error al abrir IndexedDB");
+    request.onsuccess = (event) => {
+      db = event.target.result;
+      mostrarProductos();
+    };
+
+    request.onupgradeneeded = (event) => {
+      db = event.target.result;
+      const store = db.createObjectStore("productos", { keyPath: "id", autoIncrement: true });
+      store.createIndex("nombre", "nombre", { unique: false });
+    };
+
+    document.getElementById("product-form").addEventListener("submit", (e) => {
+      e.preventDefault();
+
+      const id = document.getElementById("producto-id").value;
+      const nombre = document.getElementById("nombre").value;
+      const precio = parseFloat(document.getElementById("precio").value);
+      const costo = parseFloat(document.getElementById("costo").value);
+
+      const tx = db.transaction("productos", "readwrite");
+      const store = tx.objectStore("productos");
+
+      if (id) {
+        store.put({ id: Number(id), nombre, precio, costo });
+      } else {
+        store.add({ nombre, precio, costo });
+      }
+
+      tx.oncomplete = () => {
+        document.getElementById("product-form").reset();
+        document.getElementById("producto-id").value = "";
+        mostrarProductos();
+      };
+    });
+
+function mostrarProductos() {
+  const tbody = document.querySelector("#product-table tbody");
+  tbody.innerHTML = "";
+
+  const formatter = new Intl.NumberFormat('es-AR', {
+    style: 'currency',
+    currency: 'ARS',
+    minimumFractionDigits: 2
+  });
+
+  const tx = db.transaction("productos", "readonly");
+  const store = tx.objectStore("productos");
+  store.openCursor().onsuccess = (event) => {
+    const cursor = event.target.result;
+    if (cursor) {
+      const { id, nombre, precio, costo } = cursor.value;
+      const ganancia = (precio - costo).toFixed(2);
+
+      const row = document.createElement("tr");
+      row.innerHTML = `
+        <td>${nombre}</td>
+        <td>${formatter.format(precio)}</td>
+        <td>${formatter.format(costo)}</td>
+        <td>${formatter.format(ganancia)}</td>
+        <td>
+          <button class="btn btn-sm btn-warning me-2" onclick="editarProducto(${id})">Editar</button>
+          <button class="btn btn-sm btn-danger" onclick="eliminarProducto(${id})">Eliminar</button>
+        </td>
+      `;
+      tbody.appendChild(row);
+      cursor.continue();
+    }
+  };
+}
+
+
+    function eliminarProducto(id) {
+      const tx = db.transaction("productos", "readwrite");
+      const store = tx.objectStore("productos");
+      store.delete(id);
+      tx.oncomplete = () => mostrarProductos();
+    }
+
+    function editarProducto(id) {
+      const tx = db.transaction("productos", "readonly");
+      const store = tx.objectStore("productos");
+      const request = store.get(id);
+
+      request.onsuccess = () => {
+        const producto = request.result;
+        if (producto) {
+          document.getElementById("nombre").value = producto.nombre;
+          document.getElementById("precio").value = producto.precio;
+          document.getElementById("costo").value = producto.costo;
+          document.getElementById("producto-id").value = producto.id;
+        }
+      };
+    }
+  </script>
+
+  <a href="../index.html">Dashboard</a>
+  <a href="../calculadora/calculadora.html">Calculadora</a>
+  <a href="../Productos/inventario.html">Inventario</a>
+</body>
+
+</html>
